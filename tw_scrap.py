@@ -10,9 +10,16 @@ import sys
 import string
 import simplejson
 from twython import Twython
+import pandas as pd
 
-# WE WILL USE THE VARIABLES DAY, MONTH, AND YEAR FOR OUR OUTPUT FILE NAME
+from django.utils.encoding import smart_str, smart_unicode
+
 import datetime
+
+import pytz
+
+
+
 
 now = datetime.datetime.now()
 day = int(now.day)
@@ -25,64 +32,60 @@ t = Twython(app_key='sHAzl0KXJQat8NeUsR3CTWvMv',
             oauth_token='852360084-w0bcCcThGPvdC4DjzWjz0zSCMbamvk4wvJfsICmT',
             oauth_token_secret='9O5xHXST9xv8bBJsFk5QXp7A8rLJBvPTVkLFOHMNVOtnb')
 
-# REPLACE WITH YOUR LIST OF TWITTER USER IDS
-ids = "4816,9715012,13023422, 13393052,  14226882,  14235041, 14292458, 14335586, 14730894,\
-    15029174, 15474846, 15634728, 15689319, 15782399, 15946841, 16116519, 16148677, 16223542,\
-    16315120, 16566133, 16686673, 16801671, 41900627, 42645839, 42731742, 44157002, 44988185,\
-    48073289, 48827616, 49702654, 50310311, 50361094,"
+userid = pd.read_csv("C:/Users/gowri/Documents/Yourfeed/code/Twitter/companies.csv")
+userid= userid.dropna()
 
-# ACCESS THE LOOKUP_USER METHOD OF THE TWITTER API -- GRAB INFO ON UP TO 100 IDS WITH EACH API CALL
-# THE VARIABLE USERS IS A JSON FILE WITH DATA ON THE 32 TWITTER USERS LISTED ABOVE
-users = t.lookup_user(user_id=ids)
 
-# NAME OUR OUTPUT FILE - %i WILL BE REPLACED BY CURRENT MONTH, DAY, AND YEAR
-outfn = "twitter_user_data_%i.%i.%i.txt" % (now.month, now.day, now.year)
 
-# NAMES FOR HEADER ROW IN OUTPUT FILE
-fields = "id screen_name name created_at url followers_count friends_count statuses_count \
-    favourites_count listed_count \
-    contributors_enabled description protected location lang expanded_url".split()
 
-# INITIALIZE OUTPUT FILE AND WRITE HEADER ROW
-outfp = open(outfn, "w")
-outfp.write(string.join(fields, "\t") + "\n")  # header
+ids= userid['TwitterHandle'].tolist()
 
-# THE VARIABLE 'USERS' CONTAINS INFORMATION OF THE 32 TWITTER USER IDS LISTED ABOVE
-# THIS BLOCK WILL LOOP OVER EACH OF THESE IDS, CREATE VARIABLES, AND OUTPUT TO FILE
+
+users = t.lookup_user(screen_name=ids)
+
+
+r = []
+count =0
 for entry in users:
-    # CREATE EMPTY DICTIONARY
-    r = {}
-    for f in fields:
-        r[f] = ""
-    # ASSIGN VALUE OF 'ID' FIELD IN JSON TO 'ID' FIELD IN OUR DICTIONARY
-    r['id'] = entry['id']
-    # SAME WITH 'SCREEN_NAME' HERE, AND FOR REST OF THE VARIABLES
-    r['screen_name'] = entry['screen_name']
-    r['name'] = entry['name']
-    r['created_at'] = entry['created_at']
-    r['url'] = entry['url']
-    r['followers_count'] = entry['followers_count']
-    r['friends_count'] = entry['friends_count']
-    r['statuses_count'] = entry['statuses_count']
-    r['favourites_count'] = entry['favourites_count']
-    r['listed_count'] = entry['listed_count']
-    r['contributors_enabled'] = entry['contributors_enabled']
-    r['description'] = entry['description']
-    r['protected'] = entry['protected']
-    r['location'] = entry['location']
-    r['lang'] = entry['lang']
-    # NOT EVERY ID WILL HAVE A 'URL' KEY, SO CHECK FOR ITS EXISTENCE WITH IF CLAUSE
-    if 'url' in entry['entities']:
-        r['expanded_url'] = entry['entities']['url']['urls'][0]['expanded_url']
-    else:
-        r['expanded_url'] = ''
-    print r
-    # CREATE EMPTY LIST
-    lst = []
-    # ADD DATA FOR EACH VARIABLE
-    for f in fields:
-        lst.append(unicode(r[f]).replace("\/", "/"))
-    # WRITE ROW WITH DATA IN LIST
-    outfp.write(string.join(lst, "\t").encode("utf-8") + "\n")
+    fav=0
+    retweet=0
+    urls=0
 
-outfp.close()
+
+    d = t.get_user_timeline(screen_name= smart_str(entry['screen_name']), count="100", include_entities="true", include_rts="1")
+    for e in d:
+        retweet += e['retweet_count']
+        fav += e['favorite_count']
+        if 'media' in e['entities']:
+            urls += 1
+
+
+
+    created_at = entry['created_at']
+
+    s = datetime.datetime.strptime(created_at,'%a %b %d %H:%M:%S +0000 %Y').replace(tzinfo=pytz.UTC)
+    tino = s.tzinfo
+
+    no_days = datetime.datetime.now(tino) - s
+    avg_tweets=  float(entry['statuses_count']/ no_days.days)
+
+    if not r:
+        r = [[smart_str(entry['screen_name'])] +  [smart_str(entry['name'])] +  [smart_str(entry['created_at'])] + [entry['followers_count']] +  [entry['statuses_count']] +[entry['favourites_count']] + [avg_tweets]+ [retweet] + [fav] +[urls]]
+    else:
+        r.append([smart_str(entry['screen_name'])] +  [smart_str(entry['name'])] +  [smart_str(entry['created_at'])] + [int(entry['followers_count'])] + [int(entry['statuses_count'])] +[int(entry['favourites_count'])] + [avg_tweets]+ [retweet] + [fav] +[urls])
+    count += 1
+    print count
+
+out= pd.DataFrame(r,columns=('ScreenName','Name','Created_at','Followers','Tweet_count','Fav_count','Average_posts','Retweets_in_100', 'Fav_in_100', 'Media_100'))
+
+out['Rank']=  (out['Followers'] *0.10) + (out['Average_posts']*0.25) + (out['Retweets_in_100'] * 0.25) + (out['Fav_in_100'] *0.25) + (out['Media_100'] * 0.15)
+
+out= out.sort_values(by='Rank', ascending=[False])
+
+out = out.reset_index(drop=True)
+
+
+out.to_csv("C:/Users/gowri/Documents/Yourfeed/code/Twitter/twitter_companies_data.csv")
+
+out.to_json(path_or_buf="C:/Users/gowri/Documents/Yourfeed/code/Twitter/twitter_companies_data.json", orient='index')
+

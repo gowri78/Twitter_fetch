@@ -1,0 +1,7 @@
+{
+    "abi": 'msvc2008',
+    "implementation": 'cpython',
+    "build_version": '3.0.0.dev687',
+    "build_revision": '8484f76361935ae87c8e0245f632471b95473fbb',
+    "platform": 'win_x86_64',
+}
